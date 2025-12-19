@@ -42,13 +42,11 @@ ui <- fluidPage(
               if (!(step %in% c("CAB", "Sub", "Stop/Read")))
                 column(4, numericInput(paste0(step, "_transfer"), "Transfer (min):",
                     value = 5, min = 0))),
-            tags$hr()
-          )})),
+            tags$hr())})),
       
       actionButton("calc", "Calculate Timings")),
     
-    mainPanel(
-      h3("Step Schedule"),
+    mainPanel(h3("Step Schedule"),
       tableOutput("schedule"))))
 
 
