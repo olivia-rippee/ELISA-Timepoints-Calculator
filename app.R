@@ -13,33 +13,47 @@ ui <- fluidPage(
       tags$br(),
       h4("Enter duration and transfer time for each step:"),
       
-      # Step inputs
-      lapply(c("CAB", "Block", "Agn", "DAB", "Conj", "Sub", "Stop/Read"), function(step) {
-        tagList(
-          tags$br(),
-          h4(strong(step)),
-          fluidRow(
-            column(4, numericInput(paste0(step, "_hr"), "Hr:",
-                                   value = ifelse(step == "CAB", 3,
-                                           ifelse(step == "Block", 2,
-                                           ifelse(step == "Agn", 18,
-                                           ifelse(step == "DAB", 3,
-                                           ifelse(step == "Conj", 0,
-                                           ifelse(step == "Sub", 0, 0)))))), 
-                                   min = 0)),
-            column(4, numericInput(paste0(step, "_min"), "Min:",
-                                   value = ifelse(step == "Conj", 45,
-                                           ifelse(step == "Sub", 10,
-                                           ifelse(step == "Stop/Read", 5, 0))),
-                                   min = 0, max = 59)),
-            if (!(step %in% c("Sub", "Stop/Read")))
-              column(4, numericInput(paste0(step, "_transfer"),
-                                     "Transfer (min):", value = 5, min = 0))),
-          tags$hr())}),
+      do.call(tagList, lapply(
+        c("CAB", "Block", "Agn", "DAB", "Conj", "Sub", "Stop/Read"),
+        function(step) {
+          tagList(
+            tags$br(),
+            h4(strong(step)),
+            fluidRow(
+              
+              # Hours
+              column(4, numericInput(paste0(step, "_hr"), "Hr:",
+                  value = ifelse(step == "CAB", 3,
+                          ifelse(step == "Block", 2,
+                          ifelse(step == "Agn", 18,
+                          ifelse(step == "DAB", 3,
+                          ifelse(step == "Conj", 0,
+                          ifelse(step == "Sub", 0, 0)))))),
+                  min = 0)),
+              
+              # Minutes
+              column(4, numericInput(paste0(step, "_min"), "Min:",
+                  value = ifelse(step == "Conj", 45,
+                          ifelse(step == "Sub", 10,
+                          ifelse(step == "Stop/Read", 5, 0))),
+                  min = 0, max = 59)),
+              
+              # Transfer time (not needed for CAB, Sub, Stop/Read)
+              if (!(step %in% c("CAB", "Sub", "Stop/Read")))
+                column(4, numericInput(paste0(step, "_transfer"), "Transfer (min):",
+                    value = 5, min = 0))),
+            tags$hr()
+          )})),
+      
       actionButton("calc", "Calculate Timings")),
-    mainPanel(h3("Step Schedule"),  tableOutput("schedule"))))
+    
+    mainPanel(
+      h3("Step Schedule"),
+      tableOutput("schedule"))))
+
 
 server <- function(input, output, session) {
+  
   observeEvent(input$calc, {
     
     # Combine date and time
@@ -51,42 +65,47 @@ server <- function(input, output, session) {
     # Step names
     steps <- c("CAB", "Block", "Agn", "DAB", "Conj", "Sub", "Stop/Read")
     
-    # Prepare durations
-    durations_min <- sapply(steps, function(s) input[[paste0(s,"_hr")]]*60 + input[[paste0(s,"_min")]])
+    # Step durations
+    durations_min <- sapply(steps,
+      function(s) input[[paste0(s, "_hr")]]*60 + input[[paste0(s, "_min")]])
     
-    # Prepare transfers, set 0 for Sub and Stop/Read
-    transfers_min <- sapply(steps, function(s) {
-      if (s %in% c("Sub", "Stop/Read")) {0
-      } else {
-        input[[paste0(s,"_transfer")]]
-      }})
+    # Transfer times
+    transfers_min <- sapply(steps,
+      function(s) {
+        transfer_val <- input[[paste0(s, "_transfer")]]
+        if (is.null(transfer_val)) 0 else transfer_val})
     
-    # Create empty table
-    df <- data.frame(Step = character(), Duration = character(), Start_Time = character(), End_Time = character(), stringsAsFactors = FALSE)
+    # Build schedule table
+    df <- data.frame(Step = character(),
+                     Duration = character(),
+                     Start_Time = character(),
+                     End_Time = character(),
+                     stringsAsFactors = FALSE)
     
     current_time <- start_datetime
     
-    for(i in seq_along(steps)) {
-      # Step
+    for (i in seq_along(steps)) {
       step_name <- steps[i]
       step_duration <- durations_min[i]
       
-      df <- rbind(df, data.frame(
-        Step = step_name,
-        Duration = sprintf("%02d hr %02d min", step_duration %/% 60, step_duration %% 60),
-        Start_Time = format(current_time, "%A, %d %b %Y @ %H:%M"),  # Include day of week
-        End_Time = format(current_time + minutes(step_duration), "%A, %d %b %Y @ %H:%M"),
-        stringsAsFactors = FALSE))
+      step_start <- current_time
+      step_end   <- current_time + minutes(step_duration)
       
-      # Advance current_time by step duration
-      current_time <- current_time + minutes(step_duration)
+      df <- rbind(df,
+        data.frame(
+          Step = step_name,
+          Duration = sprintf("%02d hr %02d min", step_duration %/% 60, step_duration %% 60),
+          Start_Time = format(step_start, "%A, %d %b %Y @ %H:%M"),
+          End_Time = format(step_end, "%A, %d %b %Y @ %H:%M"),
+          stringsAsFactors = FALSE))
       
-      # **Only advance time for transfer, do NOT add a row**
-      transfer_time <- transfers_min[i]
-      current_time <- current_time + minutes(transfer_time)
-    }
+      # Move time forward
+      current_time <- step_end + minutes(transfers_min[i])}
     
-    output$schedule <- renderTable(df, bordered = TRUE, striped = TRUE, hover = TRUE, sanitize.text.function = function(x) x)
-  })}
+    output$schedule <- renderTable(df,
+      bordered = TRUE,
+      striped = TRUE,
+      hover = TRUE,
+      sanitize.text.function = function(x) x)})}
 
 shinyApp(ui, server)
